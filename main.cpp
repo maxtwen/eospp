@@ -16,6 +16,7 @@
 #include <openssl/obj_mac.h>
 #include <openssl/bn.h>
 
+
 using json = nlohmann::json;
 
 template<class T>
@@ -190,6 +191,24 @@ public:
     }
 
 
+    EC_KEY * get_key(std::string priv) {
+
+        BIGNUM *priv_key = NULL;
+        BN_hex2bn(&priv_key, priv.c_str());
+
+
+        EC_GROUP *group = EC_GROUP_new_by_curve_name(NID_secp256k1);
+        EC_KEY *key = EC_KEY_new();
+        EC_POINT *pub_key = EC_POINT_new(group);
+
+        EC_KEY_set_group(key, group);
+        EC_KEY_set_private_key(key, priv_key);
+        EC_POINT_mul(group, pub_key, priv_key, NULL, NULL, NULL);
+        EC_KEY_set_public_key(key, pub_key);
+        return key;
+    }
+
+
     int push_transaction(json transaction, std::string key) {
         json chain_info = get_chain_info();
         json lib_info = get_block(chain_info["last_irreversible_block_num"]);
@@ -198,10 +217,7 @@ public:
         std::string digest = sig_digest(encoded_trx, chain_info["chain_id"]);
         std::string priv_key = "d2653ff7cbb2d8ff129ac27ef5781ce68b2558c41a74af1f2ddca635cbeef07d";
         unsigned char * sig;
-        EC_KEY *ec_key = EC_KEY_new_by_curve_name(NID_secp256k1);
-        BIGNUM *priv = NULL;
-        BN_hex2bn(&priv, priv_key.c_str());
-        EC_KEY_set_private_key(ec_key, priv);
+        EC_KEY *ec_key = get_key(priv_key);
         char * private_key = BN_bn2hex(EC_KEY_get0_private_key(ec_key));
         std::cout << private_key << std::endl;
         unsigned char digest_arr[digest.length()];
