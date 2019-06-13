@@ -14,6 +14,7 @@
 #include <openssl/sha.h>
 #include <openssl/ecdsa.h>
 #include <openssl/obj_mac.h>
+#include <openssl/bn.h>
 
 using json = nlohmann::json;
 
@@ -195,13 +196,22 @@ public:
         Transaction trx = Transaction(transaction, chain_info, lib_info);
         std::string encoded_trx = trx.encode();
         std::string digest = sig_digest(encoded_trx, chain_info["chain_id"]);
-        std::string priv_key = "5KQwrPbwdL6PhXujxW37FSSQZ1JiwsST4cqQzDeyXtP79zkvFD3";
-        unsigned char dig[65];
+        std::string priv_key = "d2653ff7cbb2d8ff129ac27ef5781ce68b2558c41a74af1f2ddca635cbeef07d";
+        unsigned char * sig;
         EC_KEY *ec_key = EC_KEY_new_by_curve_name(NID_secp256k1);
         BIGNUM *priv = NULL;
         BN_hex2bn(&priv, priv_key.c_str());
         EC_KEY_set_private_key(ec_key, priv);
-        ECDSA_sign(0, digest, digest.length(), dig, 65, ec_key)
+        char * private_key = BN_bn2hex(EC_KEY_get0_private_key(ec_key));
+        std::cout << private_key << std::endl;
+        unsigned char digest_arr[digest.length()];
+        strcpy((char*) digest_arr, digest.c_str());
+        unsigned int siglen = 65;
+        unsigned int *siglen_ptr = &siglen;
+        ECDSA_SIG *signature = ECDSA_do_sign(digest_arr, sizeof(digest_arr), ec_key);
+        std::cout << BN_bn2hex(signature->r) << std::endl;
+        std::cout << BN_bn2hex(signature->s) << std::endl;
+        std::cout << ECDSA_do_verify(digest_arr, sizeof(digest_arr), signature, ec_key) << std::endl;
         return 0;
     }
 
@@ -256,8 +266,6 @@ int sign(std::string token_account, std::string from_account, std::string to_acc
                  {"memo",     memo}};
     json resp = eos.push_action(token_account, "transfer", from_account, "active", "", args, 60);
 
-    std::cout << resp;
-
     json action_json = {};
 
 
@@ -265,10 +273,6 @@ int sign(std::string token_account, std::string from_account, std::string to_acc
 }
 
 int main() {
-
-    std::cout << sha256({'\0'}) << std::endl;
-    std::cout << '\00' << std::endl;
-//    return 0;
 
     std::string token_account = "eosdtsttoken";
     std::string from_account = "tester5";
@@ -278,9 +282,6 @@ int main() {
     std::string private_key = "5KQwrPbwdL6PhXujxW37FSSQZ1JiwsST4cqQzDeyXtP79zkvFD3";
 
     sign(token_account, from_account, to_account, quantity, memo, private_key);
-
-//    std::cout << curlpp::options::Url("https://en.wikipedia.org/wiki/Auto_ptr");
-
 
     return 0;
 }
