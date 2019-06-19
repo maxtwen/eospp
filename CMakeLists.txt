@@ -9,4 +9,4 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${GCC_COVERAGE_COMPILE_FLAGS}" )
 
 
 
-add_executable(eos_signature_11 main.cpp)
+add_executable(eos_signature_11 main.cpp elliptic.h)

@@ -15,6 +15,7 @@
 #include <openssl/ecdsa.h>
 #include <openssl/obj_mac.h>
 #include <openssl/bn.h>
+#include "elliptic.h"
 
 
 using json = nlohmann::json;
@@ -191,7 +192,7 @@ public:
     }
 
 
-    EC_KEY * get_key(std::string priv) {
+    EC_KEY *get_key(std::string priv) {
 
         BIGNUM *priv_key = NULL;
         BN_hex2bn(&priv_key, priv.c_str());
@@ -199,13 +200,83 @@ public:
 
         EC_GROUP *group = EC_GROUP_new_by_curve_name(NID_secp256k1);
         EC_KEY *key = EC_KEY_new();
+        EC_KEY_set_conv_form(key, POINT_CONVERSION_COMPRESSED);
         EC_POINT *pub_key = EC_POINT_new(group);
 
         EC_KEY_set_group(key, group);
         EC_KEY_set_private_key(key, priv_key);
         EC_POINT_mul(group, pub_key, priv_key, NULL, NULL, NULL);
         EC_KEY_set_public_key(key, pub_key);
+
+
         return key;
+    }
+
+
+    EC_KEY *get_public_key(EC_KEY *private_key) {
+        EC_KEY *pub = EC_KEY_new_by_curve_name(NID_secp256k1);
+        EC_KEY_set_public_key(pub, EC_KEY_get0_public_key(private_key));
+        return pub;
+    }
+
+    void public_to_buf(EC_KEY *key, char *buf) {
+        auto *buffer = (unsigned char *) (&buf[0]);
+        i2o_ECPublicKey(key, &buffer);
+    }
+
+
+    void sign_dig(unsigned char *digest,
+                  EC_KEY *ec_key,
+                  unsigned char *compact_signature) { // see eos/libraries/fc/src/crypto/elliptic_openssl.cpp compact_signature private_key::sign_compact
+        ECDSA_SIG *sig = nullptr;
+
+        char public_key[33];
+        public_to_buf(ec_key, public_key);
+        std::cout << public_key << std::endl;
+
+        char key_data[33];
+
+        while (true) {
+            sig = ECDSA_do_sign(digest, sizeof(digest), ec_key);
+
+            int nBitsR = BN_num_bits(sig->r);
+            int nBitsS = BN_num_bits(sig->s);
+            if (nBitsR > 256 || nBitsS > 256) continue;
+            int nRecId = -1;
+            EC_KEY *key = EC_KEY_new_by_curve_name(NID_secp256k1);
+            EC_KEY_set_conv_form(key, POINT_CONVERSION_COMPRESSED);
+            for (int i = 0; i < 4; i++) {
+                if (ECDSA_SIG_recover_key_GFp(key, sig, (unsigned char *) &digest,
+                                              sizeof(digest), i, 1) == 1) {
+                    public_to_buf(key, key_data);
+                    if (0 == memcmp(key_data, public_key, 33 * sizeof(char))) {
+                        nRecId = i;
+                        break;
+                    }
+                }
+            }
+            EC_KEY_free(key);
+            unsigned char *result = nullptr;
+            auto bytes = i2d_ECDSA_SIG(sig, &result);
+            auto lenR = result[3];
+            auto lenS = result[5 + lenR];
+
+            if (lenR != 32) {
+                free(result);
+                continue;
+            }
+            if (lenS != 32) {
+                free(result);
+                continue;
+            }
+
+            memcpy(&compact_signature[1], &result[4], lenR);
+            memcpy(&compact_signature[33], &result[6 + lenR], lenS);
+            compact_signature[0] = nRecId + 27 + 4;
+            return;
+        }
+
+
     }
 
 
@@ -216,18 +287,26 @@ public:
         std::string encoded_trx = trx.encode();
         std::string digest = sig_digest(encoded_trx, chain_info["chain_id"]);
         std::string priv_key = "d2653ff7cbb2d8ff129ac27ef5781ce68b2558c41a74af1f2ddca635cbeef07d";
-        unsigned char * sig;
+        unsigned char *sig;
         EC_KEY *ec_key = get_key(priv_key);
-        char * private_key = BN_bn2hex(EC_KEY_get0_private_key(ec_key));
+        char *private_key = BN_bn2hex(EC_KEY_get0_private_key(ec_key));
         std::cout << private_key << std::endl;
+
         unsigned char digest_arr[digest.length()];
-        strcpy((char*) digest_arr, digest.c_str());
-        unsigned int siglen = 65;
-        unsigned int *siglen_ptr = &siglen;
-        ECDSA_SIG *signature = ECDSA_do_sign(digest_arr, sizeof(digest_arr), ec_key);
-        std::cout << BN_bn2hex(signature->r) << std::endl;
-        std::cout << BN_bn2hex(signature->s) << std::endl;
-        std::cout << ECDSA_do_verify(digest_arr, sizeof(digest_arr), signature, ec_key) << std::endl;
+        strcpy((char *) digest_arr, digest.c_str());
+
+//        ECDSA_SIG *signature = sign_dig(digest_arr, ec_key);
+        unsigned char compact_signature[65];
+
+        sign_dig(digest_arr, ec_key, compact_signature);
+
+        std::cout << compact_signature << std::endl;
+
+//        std::cout << BN_bn2hex(signature->r) << std::endl;
+//        std::cout << BN_bn2dec(signature->r) << std::endl;
+//        std::cout << BN_bn2hex(signature->s) << std::endl;
+//        std::cout << BN_bn2dec(signature->s) << std::endl;
+//        std::cout << ECDSA_do_verify(digest_arr, sizeof(digest_arr), signature, ec_key) << std::endl;
         return 0;
     }
 
