@@ -183,10 +183,10 @@ public:
     }
 
 
-    EC_KEY *get_key(std::string priv) {
+    static EC_KEY *from_wif(std::string priv) {
 
-        BIGNUM *priv_key = DecodeBase58(priv.c_str());
-
+        BIGNUM *priv_key = BN_new();
+        DecodeBase58(priv.c_str(), priv_key);
 
         EC_GROUP *group = EC_GROUP_new_by_curve_name(NID_secp256k1);
         EC_KEY *key = EC_KEY_new();
@@ -209,25 +209,25 @@ public:
         return pub;
     }
 
-    void public_to_buf(EC_KEY *key, char *buf) {
+    static void public_to_buf(EC_KEY *key, char *buf) {
         auto *buffer = (unsigned char *) (&buf[0]);
         i2o_ECPublicKey(key, &buffer);
     }
 
 
-    void sign_dig(unsigned char *digest,
-                  EC_KEY *ec_key,
-                  compact_signature *sig) { // see eos/libraries/fc/src/crypto/elliptic_openssl.cpp compact_signature private_key::sign_compact
+    static void sign_dig(sha256 &digest,
+                         EC_KEY *ec_key,
+                         compact_signature *sig) { // see eos/libraries/fc/src/crypto/elliptic_openssl.cpp compact_signature private_key::sign_compact
         ECDSA_SIG *ecdsa_sig = nullptr;
 
         char public_key[33];
         public_to_buf(ec_key, public_key);
-//        std::cout << public_key << std::endl;
 
         char key_data[33];
 
         while (true) {
-            ecdsa_sig = ECDSA_do_sign(digest, sizeof(digest), ec_key); //TODO size of используется не правильно, там нужна длина
+            ecdsa_sig = ECDSA_do_sign((unsigned char *) &digest, sizeof(digest),
+                                      ec_key); //TODO size of используется не правильно, там нужна длина
 
             int nBitsR = BN_num_bits(ecdsa_sig->r);
             int nBitsS = BN_num_bits(ecdsa_sig->s);
@@ -285,40 +285,30 @@ public:
         std::string encoded_trx = trx.encode();
         sha256 digest = sig_digest(encoded_trx, chain_info["chain_id"]);
         std::string priv_key = "5KQwrPbwdL6PhXujxW37FSSQZ1JiwsST4cqQzDeyXtP79zkvFD3";
-        EC_KEY *ec_key = get_key(priv_key);
+        EC_KEY *ec_key = from_wif(priv_key);
         char *private_key = BN_bn2hex(EC_KEY_get0_private_key(ec_key));
-//        std::cout << private_key << std::endl;
 
 
 //        ECDSA_SIG *signature = sign_dig(digest_arr, ec_key);
         compact_signature sig[COMPACT_SIG_LEN];
 
-        sign_dig((unsigned char *) digest.data(), ec_key, sig);
+        sign_dig(digest, ec_key, sig);
 
 
         calculate_checksum(sig);
 
-        std::cout << (int) sig[0] << std::endl;
 
         std::stringstream ss;
         for (int i = 0; i < 65; i++) {
             ss << std::hex << (int) sig[i];
         }
 
-        std::cout << ss.str() << std::endl;
 
         std::string check = ss.str() + "4b31";
 
 
 //        char *hex = BN_bn2hex(bn);
 
-//        std::cout << *bn << std::endl;
-
-//        std::cout << BN_bn2hex(signature->r) << std::endl;
-//        std::cout << BN_bn2dec(signature->r) << std::endl;
-//        std::cout << BN_bn2hex(signature->s) << std::endl;
-//        std::cout << BN_bn2dec(signature->s) << std::endl;
-//        std::cout << ECDSA_do_verify(digest_arr, sizeof(digest_arr), signature, ec_key) << std::endl;
         return 0;
     }
 
@@ -381,14 +371,29 @@ int sign(std::string token_account, std::string from_account, std::string to_acc
 
 int main() {
 
-    std::string token_account = "eosdtsttoken";
-    std::string from_account = "tester5";
-    std::string to_account = "exchange";
-    std::string quantity = "0.024048000 EOSDT";
-    std::string memo = "{marketid:1,side:buy,price:0.008,quantity:3,nonce:7876584,type:gtc,post_only:true}";
-    std::string private_key = "5KQwrPbwdL6PhXujxW37FSSQZ1JiwsST4cqQzDeyXtP79zkvFD3";
+    char b[32];
+    memset(b, 0, sizeof(b));
+    auto sb = sha256(b, sizeof(b));
+    auto strpkey = std::string("5KQwrPbwdL6PhXujxW37FSSQZ1JiwsST4cqQzDeyXtP79zkvFD3");
+    auto pkey = Eos::from_wif(strpkey);
+    compact_signature sig[COMPACT_SIG_LEN];
+    Eos::sign_dig(sb, pkey, sig);
+    std::stringstream ss;
+    for (int i = 0; i < 65; i++) {
+        ss << std::hex << (int) sig[i];
+    }
 
-    sign(token_account, from_account, to_account, quantity, memo, private_key);
+    std::cout << ss.str() << std::endl;
+
+
+//    std::string token_account = "eosdtsttoken";
+//    std::string from_account = "tester5";
+//    std::string to_account = "exchange";
+//    std::string quantity = "0.024048000 EOSDT";
+//    std::string memo = "{marketid:1,side:buy,price:0.008,quantity:3,nonce:7876584,type:gtc,post_only:true}";
+//    std::string private_key = "5KQwrPbwdL6PhXujxW37FSSQZ1JiwsST4cqQzDeyXtP79zkvFD3";
+//
+//    sign(token_account, from_account, to_account, quantity, memo, private_key);
 
     return 0;
 }

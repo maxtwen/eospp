@@ -11,6 +11,12 @@ class sha256 {
 public:
     explicit sha256() { memset(_hash, 0, sizeof(_hash)); }
 
+    sha256(const char *data, size_t size) {
+        if (size != sizeof(_hash))
+            throw "sha256: size mismatch";
+        memcpy(_hash, data, size);
+    }
+
     char *data() const {
         return (char *) &_hash[0];
     }

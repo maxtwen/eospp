@@ -366,7 +366,7 @@ public:
     }
 };
 
-BIGNUM *DecodeBase58(const char *psz) {
+BIGNUM *DecodeBase58(const char *psz, BIGNUM * result) {
     CAutoBN_CTX pctx;
     CBigNum bn58 = 58;
     CBigNum bn = 0;
@@ -391,5 +391,6 @@ BIGNUM *DecodeBase58(const char *psz) {
             throw bignum_error("DecodeBase58 : BN_mul failed");
         bn += bnChar;
     }
-    return bn.to_bignum();
+    BIGNUM * decoded_key = bn.to_bignum();
+    BN_copy(result, decoded_key);
 }
