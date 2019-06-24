@@ -11,12 +11,18 @@
 #include <iomanip>
 #include <boost/endian/conversion.hpp>
 #include <list>
-#include <openssl/sha.h>
 #include <openssl/ecdsa.h>
 #include <openssl/obj_mac.h>
 #include <openssl/bn.h>
 #include "elliptic.h"
+#include <openssl/ripemd.h>
+#include "base58.cpp"
+#include "sha256.cpp"
 
+const std::string SIG_PREFIX = "K1";
+const int COMPACT_SIG_LEN = 65;
+
+typedef unsigned char compact_signature;
 
 using json = nlohmann::json;
 
@@ -29,20 +35,6 @@ std::string to_little_endian_hex(T t) {
     oss << std::hex << lNum;
     std::string mystring = oss.str();
     return mystring;
-}
-
-std::string sha256(std::string line) {
-    unsigned char hash[SHA256_DIGEST_LENGTH];
-    SHA256_CTX sha256;
-    SHA256_Init(&sha256);
-    SHA256_Update(&sha256, line.c_str(), line.length());
-    SHA256_Final(hash, &sha256);
-
-    std::string output = "";
-    for (int i = 0; i < SHA256_DIGEST_LENGTH; i++) {
-        output += to_little_endian_hex(hash[i]);
-    }
-    return output;
 }
 
 
@@ -181,21 +173,19 @@ public:
     }
 
 
-    std::string sig_digest(std::string payload, std::string chain_id) {
+    sha256 sig_digest(std::string payload, std::string chain_id) {
         std::string full_payload = payload + chain_id;
         char char_array[full_payload.length() + 32 + 1];
 //        for (int i = 0; i < sizeof(char_array)/ sizeof(const char*); i++) {
 //            char_array[i] = '\0';
 //        }
-        std::strcpy(char_array, full_payload.c_str());
-        return sha256(char_array);
+        return sha256::hash(full_payload.c_str(), full_payload.length());
     }
 
 
     EC_KEY *get_key(std::string priv) {
 
-        BIGNUM *priv_key = NULL;
-        BN_hex2bn(&priv_key, priv.c_str());
+        BIGNUM *priv_key = DecodeBase58(priv.c_str());
 
 
         EC_GROUP *group = EC_GROUP_new_by_curve_name(NID_secp256k1);
@@ -227,26 +217,26 @@ public:
 
     void sign_dig(unsigned char *digest,
                   EC_KEY *ec_key,
-                  unsigned char *compact_signature) { // see eos/libraries/fc/src/crypto/elliptic_openssl.cpp compact_signature private_key::sign_compact
-        ECDSA_SIG *sig = nullptr;
+                  compact_signature *sig) { // see eos/libraries/fc/src/crypto/elliptic_openssl.cpp compact_signature private_key::sign_compact
+        ECDSA_SIG *ecdsa_sig = nullptr;
 
         char public_key[33];
         public_to_buf(ec_key, public_key);
-        std::cout << public_key << std::endl;
+//        std::cout << public_key << std::endl;
 
         char key_data[33];
 
         while (true) {
-            sig = ECDSA_do_sign(digest, sizeof(digest), ec_key);
+            ecdsa_sig = ECDSA_do_sign(digest, sizeof(digest), ec_key); //TODO size of используется не правильно, там нужна длина
 
-            int nBitsR = BN_num_bits(sig->r);
-            int nBitsS = BN_num_bits(sig->s);
+            int nBitsR = BN_num_bits(ecdsa_sig->r);
+            int nBitsS = BN_num_bits(ecdsa_sig->s);
             if (nBitsR > 256 || nBitsS > 256) continue;
             int nRecId = -1;
             EC_KEY *key = EC_KEY_new_by_curve_name(NID_secp256k1);
             EC_KEY_set_conv_form(key, POINT_CONVERSION_COMPRESSED);
             for (int i = 0; i < 4; i++) {
-                if (ECDSA_SIG_recover_key_GFp(key, sig, (unsigned char *) &digest,
+                if (ECDSA_SIG_recover_key_GFp(key, ecdsa_sig, (unsigned char *) &digest,
                                               sizeof(digest), i, 1) == 1) {
                     public_to_buf(key, key_data);
                     if (0 == memcmp(key_data, public_key, 33 * sizeof(char))) {
@@ -257,7 +247,7 @@ public:
             }
             EC_KEY_free(key);
             unsigned char *result = nullptr;
-            auto bytes = i2d_ECDSA_SIG(sig, &result);
+            auto bytes = i2d_ECDSA_SIG(ecdsa_sig, &result);
             auto lenR = result[3];
             auto lenS = result[5 + lenR];
 
@@ -270,13 +260,21 @@ public:
                 continue;
             }
 
-            memcpy(&compact_signature[1], &result[4], lenR);
-            memcpy(&compact_signature[33], &result[6 + lenR], lenS);
-            compact_signature[0] = nRecId + 27 + 4;
+            memcpy(&sig[1], &result[4], lenR);
+            memcpy(&sig[33], &result[6 + lenR], lenS);
+            sig[0] = nRecId + 27 + 4;
             return;
         }
 
 
+    }
+
+
+    unsigned int calculate_checksum(compact_signature *sig) {
+        RIPEMD160_CTX ctx;
+        RIPEMD160_Init(&ctx);
+        RIPEMD160_Update(&ctx, sig, COMPACT_SIG_LEN);
+        return 0;
     }
 
 
@@ -285,22 +283,36 @@ public:
         json lib_info = get_block(chain_info["last_irreversible_block_num"]);
         Transaction trx = Transaction(transaction, chain_info, lib_info);
         std::string encoded_trx = trx.encode();
-        std::string digest = sig_digest(encoded_trx, chain_info["chain_id"]);
-        std::string priv_key = "d2653ff7cbb2d8ff129ac27ef5781ce68b2558c41a74af1f2ddca635cbeef07d";
-        unsigned char *sig;
+        sha256 digest = sig_digest(encoded_trx, chain_info["chain_id"]);
+        std::string priv_key = "5KQwrPbwdL6PhXujxW37FSSQZ1JiwsST4cqQzDeyXtP79zkvFD3";
         EC_KEY *ec_key = get_key(priv_key);
         char *private_key = BN_bn2hex(EC_KEY_get0_private_key(ec_key));
-        std::cout << private_key << std::endl;
+//        std::cout << private_key << std::endl;
 
-        unsigned char digest_arr[digest.length()];
-        strcpy((char *) digest_arr, digest.c_str());
 
 //        ECDSA_SIG *signature = sign_dig(digest_arr, ec_key);
-        unsigned char compact_signature[65];
+        compact_signature sig[COMPACT_SIG_LEN];
 
-        sign_dig(digest_arr, ec_key, compact_signature);
+        sign_dig((unsigned char *) digest.data(), ec_key, sig);
 
-        std::cout << compact_signature << std::endl;
+
+        calculate_checksum(sig);
+
+        std::cout << (int) sig[0] << std::endl;
+
+        std::stringstream ss;
+        for (int i = 0; i < 65; i++) {
+            ss << std::hex << (int) sig[i];
+        }
+
+        std::cout << ss.str() << std::endl;
+
+        std::string check = ss.str() + "4b31";
+
+
+//        char *hex = BN_bn2hex(bn);
+
+//        std::cout << *bn << std::endl;
 
 //        std::cout << BN_bn2hex(signature->r) << std::endl;
 //        std::cout << BN_bn2dec(signature->r) << std::endl;
