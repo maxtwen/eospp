@@ -19,7 +19,7 @@
 #include "base58.cpp"
 #include "sha256.cpp"
 
-const std::string SIG_PREFIX = "SIG_K1";
+const std::string SIG_PREFIX = "K1";
 const int COMPACT_SIG_LEN = 65;
 
 typedef unsigned char compact_signature;
@@ -152,8 +152,9 @@ public:
     }
 
 
-    int push_action(std::string account, std::string action, std::string actor, std::string permission, std::string key,
-                    json args, int expiration_sec) {
+    json
+    push_action(std::string account, std::string action, std::string actor, std::string permission, std::string key,
+                json args, int expiration_sec) {
         json binargs_resp = abi_json_to_bin(account, action, args);
         std::unordered_map<std::string, std::string> authorization[1] = {{{"actor", actor}, {"permission", permission}}};
         json action_json = {{"account",       account},
@@ -168,8 +169,7 @@ public:
         json trx = {{"actions",    actions},
                     {"expiration", expiration}};
 
-        push_transaction(trx, key);
-        return 0;
+        return push_transaction(trx, key);
     }
 
 
@@ -285,17 +285,18 @@ public:
         unsigned int check = calculate_checksum(sig);
         std::cout << sizeof(check) << std::endl;
         unsigned char data[COMPACT_SIG_LEN + sizeof(check)];
-        memcpy(data, (const char *) &sig, COMPACT_SIG_LEN);
-        memcpy(reinterpret_cast<unsigned char *>(reinterpret_cast<unsigned long long>(&data) + COMPACT_SIG_LEN), &check,
+        memcpy(data, (const char *) &sig[0], COMPACT_SIG_LEN);
+        memcpy(reinterpret_cast<unsigned char *>(reinterpret_cast<unsigned long long>(&data) + COMPACT_SIG_LEN),
+               (char *) &check,
                sizeof(check));
         std::string data_str = EncodeBase58((const unsigned char *) &data,
                                             (const unsigned char *) &data + sizeof(data));
-        data_str = SIG_PREFIX + "_" + data_str;
+        data_str = "SIG_" + SIG_PREFIX + "_" + data_str;
         return data_str;
     }
 
 
-    int push_transaction(json transaction, std::string key) {
+    json push_transaction(json transaction, std::string key) {
         json chain_info = get_chain_info();
         json lib_info = get_block(chain_info["last_irreversible_block_num"]);
         Transaction trx = Transaction(transaction, chain_info, lib_info);
@@ -312,21 +313,13 @@ public:
         sign_dig(digest, ec_key, sig);
 
 
-        calculate_checksum(sig);
+        std::string sig_str = sig_to_str(sig);
 
+        json final_trx = {{"compression", "none"},
+                          {"transaction", transaction},
+                          {"signatures",  {sig_str}}};
 
-        std::stringstream ss;
-        for (int i = 0; i < 65; i++) {
-            ss << std::hex << (int) sig[i];
-        }
-
-
-        std::string check = ss.str() + "4b31";
-
-
-//        char *hex = BN_bn2hex(bn);
-
-        return 0;
+        return final_trx;
     }
 
     json get_block(int block_num) {
@@ -380,39 +373,38 @@ int sign(std::string token_account, std::string from_account, std::string to_acc
                  {"memo",     memo}};
     json resp = eos.push_action(token_account, "transfer", from_account, "active", "", args, 60);
 
-    json action_json = {};
-
+    std::cout << resp << std::endl;
 
     return 0;
 }
 
 int main() {
 
-    char b[32];
-    memset(b, 0, sizeof(b));
-    auto sb = sha256(b, sizeof(b));
-    auto strpkey = std::string("5KQwrPbwdL6PhXujxW37FSSQZ1JiwsST4cqQzDeyXtP79zkvFD3");
-    auto pkey = Eos::from_wif(strpkey);
-    compact_signature sig[COMPACT_SIG_LEN];
-    Eos::sign_dig(sb, pkey, sig);
-    std::stringstream ss;
-    for (int i = 0; i < 65; i++) {
-        ss << std::hex << (int) sig[i];
-    }
-
-    std::cout << ss.str() << std::endl;
-
-    std::cout << Eos::sig_to_str(sig) << std::endl;
-
-
-//    std::string token_account = "eosdtsttoken";
-//    std::string from_account = "tester5";
-//    std::string to_account = "exchange";
-//    std::string quantity = "0.024048000 EOSDT";
-//    std::string memo = "{marketid:1,side:buy,price:0.008,quantity:3,nonce:7876584,type:gtc,post_only:true}";
-//    std::string private_key = "5KQwrPbwdL6PhXujxW37FSSQZ1JiwsST4cqQzDeyXtP79zkvFD3";
+//    char b[32];
+//    memset(b, 0, sizeof(b));
+//    auto sb = sha256(b, sizeof(b));
+//    auto strpkey = std::string("5KQwrPbwdL6PhXujxW37FSSQZ1JiwsST4cqQzDeyXtP79zkvFD3");
+//    auto pkey = Eos::from_wif(strpkey);
+//    compact_signature sig[COMPACT_SIG_LEN];
+//    Eos::sign_dig(sb, pkey, sig);
+//    std::stringstream ss;
+//    for (int i = 0; i < 65; i++) {
+//        ss << std::hex << (int) sig[i];
+//    }
 //
-//    sign(token_account, from_account, to_account, quantity, memo, private_key);
+//    std::cout << ss.str() << std::endl;
+//
+//    std::cout << Eos::sig_to_str(sig) << std::endl;
+
+
+    std::string token_account = "eosdtsttoken";
+    std::string from_account = "tester5";
+    std::string to_account = "exchange";
+    std::string quantity = "0.024048000 EOSDT";
+    std::string memo = "{marketid:1,side:buy,price:0.008,quantity:3,nonce:7876584,type:gtc,post_only:true}";
+    std::string private_key = "5KQwrPbwdL6PhXujxW37FSSQZ1JiwsST4cqQzDeyXtP79zkvFD3";
+
+    sign(token_account, from_account, to_account, quantity, memo, private_key);
 
     return 0;
 }
