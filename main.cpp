@@ -19,7 +19,7 @@
 #include "base58.cpp"
 #include "sha256.cpp"
 
-const std::string SIG_PREFIX = "K1";
+const std::string SIG_PREFIX = "SIG_K1";
 const int COMPACT_SIG_LEN = 65;
 
 typedef unsigned char compact_signature;
@@ -270,11 +270,28 @@ public:
     }
 
 
-    unsigned int calculate_checksum(compact_signature *sig) {
+    static unsigned int calculate_checksum(compact_signature *sig) {
         RIPEMD160_CTX ctx;
         RIPEMD160_Init(&ctx);
-        RIPEMD160_Update(&ctx, sig, COMPACT_SIG_LEN);
-        return 0;
+        RIPEMD160_Update(&ctx, (const char *) sig, COMPACT_SIG_LEN);
+        RIPEMD160_Update(&ctx, SIG_PREFIX.c_str(), SIG_PREFIX.length());
+        unsigned int hash[5];
+        RIPEMD160_Final((unsigned char *) hash, &ctx);
+        return hash[0];
+    }
+
+
+    static std::string sig_to_str(compact_signature *sig) {
+        unsigned int check = calculate_checksum(sig);
+        std::cout << sizeof(check) << std::endl;
+        unsigned char data[COMPACT_SIG_LEN + sizeof(check)];
+        memcpy(data, (const char *) &sig, COMPACT_SIG_LEN);
+        memcpy(reinterpret_cast<unsigned char *>(reinterpret_cast<unsigned long long>(&data) + COMPACT_SIG_LEN), &check,
+               sizeof(check));
+        std::string data_str = EncodeBase58((const unsigned char *) &data,
+                                            (const unsigned char *) &data + sizeof(data));
+        data_str = SIG_PREFIX + "_" + data_str;
+        return data_str;
     }
 
 
@@ -384,6 +401,8 @@ int main() {
     }
 
     std::cout << ss.str() << std::endl;
+
+    std::cout << Eos::sig_to_str(sig) << std::endl;
 
 
 //    std::string token_account = "eosdtsttoken";
