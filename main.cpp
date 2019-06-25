@@ -38,6 +38,14 @@ std::string to_little_endian_hex(T t) {
 }
 
 
+std::string to_iso_format(time_t &time) {
+    char buf[sizeof "2011-10-08T07:07:09"];
+    strftime(buf, sizeof buf, "%FT%T", gmtime(&time));
+    std::cout << std::string(buf) << std::endl;
+    return std::string(buf);
+}
+
+
 class Transaction {
 public:
     json data;
@@ -314,6 +322,8 @@ public:
 
 
         std::string sig_str = sig_to_str(sig);
+        time_t expiration = transaction["expiration"].get<time_t>();
+        transaction["expiration"] = to_iso_format(expiration);
 
         json final_trx = {{"compression", "none"},
                           {"transaction", transaction},
