@@ -5,6 +5,17 @@
 #ifndef SHA256_CPP
 #define SHA256_CPP
 
+std::string to_hex( const char* d, uint32_t s )
+{
+    std::string r;
+    const char* to_hex="0123456789abcdef";
+    uint8_t* c = (uint8_t*)d;
+    for( uint32_t i = 0; i < s; ++i )
+        (r += to_hex[(c[i]>>4)]) += to_hex[(c[i] &0x0f)];
+    return r;
+}
+
+
 class sha256 {
     unsigned long long _hash[4];
 
@@ -29,6 +40,10 @@ public:
 
     static sha256 hash(const sha256 &s) {
         return hash(s.data(), sizeof(s._hash));
+    }
+
+    std::string str()const {
+        return to_hex( (char*)_hash, sizeof(_hash) );
     }
 
     class encoder {

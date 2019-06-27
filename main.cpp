@@ -41,85 +41,104 @@ std::string to_little_endian_hex(T t) {
 std::string to_iso_format(time_t &time) {
     char buf[sizeof "2011-10-08T07:07:09"];
     strftime(buf, sizeof buf, "%FT%T", gmtime(&time));
-    std::cout << std::string(buf) << std::endl;
     return std::string(buf);
 }
 
+unsigned char* hexstr_to_char(const char* hexstr)
+{
+    size_t len = strlen(hexstr);
+    size_t final_len = len / 2;
+    unsigned char* chrs = (unsigned char*)malloc((final_len+1) * sizeof(*chrs));
+    for (size_t i=0, j=0; j<final_len; i+=2, j++)
+        chrs[j] = (hexstr[i] % 32 + 9) % 25 * 16 + (hexstr[i+1] % 32 + 9) % 25;
+    chrs[final_len] = '\0';
+    return chrs;
+}
+
+
+static constexpr uint64_t char_to_symbol(char c) {
+    if (c >= 'a' && c <= 'z')
+        return (c - 'a') + 6;
+    if (c >= '1' && c <= '5')
+        return (c - '1') + 1;
+    return 0;
+}
+
+
+static uint64_t string_to_name(std::string str) {
+    uint64_t name = 0;
+    int i = 0;
+    for (; str[i] && i < 12; ++i) {
+        // NOTE: char_to_symbol() returns char type, and without this explicit
+        // expansion to uint64 type, the compilation fails at the point of usage
+        // of string_to_name(), where the usage requires constant (compile time) expression.
+        name |= (char_to_symbol(str[i]) & 0x1f) << (64 - 5 * (i + 1));
+    }
+
+    // The for-loop encoded up to 60 high bits into uint64 'name' variable,
+    // if (strlen(str) > 12) then encode str[12] into the low (remaining)
+    // 4 bits of 'name'
+    if (i == 12)
+        name |= char_to_symbol(str[12]) & 0x0F;
+    return name;
+}
+
+std::string encode_name(std::string name) {
+    auto encoded_name = to_little_endian_hex((unsigned long long) string_to_name(name));
+    std::string result = "";
+    if (encoded_name.length() < 16) {
+        for (int i = 0; i < 16 - encoded_name.length(); i += 2) {
+            result += "00";
+        }
+    }
+    result += encoded_name;
+    return result;
+}
 
 class Transaction {
-public:
-    json data;
+    json _data;
+    json _chain_info;
 
-    Transaction(json data_, json chain_info, json lib_info) {
-        data_["ref_block_num"] = get_ref_blocknum(chain_info["last_irreversible_block_num"]);
-        data_["ref_block_prefix"] = lib_info["ref_block_prefix"];
-        data = data_;
+public:
+
+    Transaction(json data, json chain_info, json lib_info) {
+        data["ref_block_num"] = get_ref_blocknum(chain_info["last_irreversible_block_num"]);
+        data["ref_block_prefix"] = lib_info["ref_block_prefix"];
+        data["net_usage_words"] = 0;
+        data["max_cpu_usage_ms"] = 0;
+        data["delay_sec"] = 0;
+        data["context_free_actions"] = "[]"_json;
+        _data = data;
+        _chain_info = chain_info;
     }
 
     int get_ref_blocknum(int head_blocknum) const {
         return ((head_blocknum / 0xffff) * 0xffff) + head_blocknum % 0xffff;
     }
 
+    json get_tx_json() {
+        return _data;
+    }
+
 
     std::string encode_hdr() {
-        std::string exp = to_little_endian_hex((uint32_t) data["expiration"]);
-        std::string ref_blk = to_little_endian_hex((uint16_t) data["ref_block_num"]);
-        std::string ref_block_prefix = to_little_endian_hex((uint32_t) data["ref_block_prefix"]);
+        std::string exp = to_little_endian_hex((uint32_t) _data["expiration"]);
+        std::string ref_blk = to_little_endian_hex((uint16_t) _data["ref_block_num"]);
+        std::string ref_block_prefix = to_little_endian_hex((uint32_t) _data["ref_block_prefix"]);
         std::string net_usage_words = "00";
         std::string max_cpu_usage_ms = "00";
         std::string delay_sec = "00";
         return exp + ref_blk + ref_block_prefix + net_usage_words + max_cpu_usage_ms + delay_sec;
     }
 
-    static constexpr uint64_t char_to_symbol(char c) {
-        if (c >= 'a' && c <= 'z')
-            return (c - 'a') + 6;
-        if (c >= '1' && c <= '5')
-            return (c - '1') + 1;
-        return 0;
-    }
-
-    static uint64_t string_to_name(std::string str) {
-        uint64_t name = 0;
-        int i = 0;
-        for (; str[i] && i < 12; ++i) {
-            // NOTE: char_to_symbol() returns char type, and without this explicit
-            // expansion to uint64 type, the compilation fails at the point of usage
-            // of string_to_name(), where the usage requires constant (compile time) expression.
-            name |= (char_to_symbol(str[i]) & 0x1f) << (64 - 5 * (i + 1));
-        }
-
-        // The for-loop encoded up to 60 high bits into uint64 'name' variable,
-        // if (strlen(str) > 12) then encode str[12] into the low (remaining)
-        // 4 bits of 'name'
-        if (i == 12)
-            name |= char_to_symbol(str[12]) & 0x0F;
-        return name;
-    }
 
     template<typename Value>
     std::string serializeVarInt(Value inValue) {
         std::stringstream ss;
-        Value value = inValue;
-
-        bool more = true;
-        while (more) {
-            Value outputByte = value & 127;
-            value >>= 7;
-            more = std::is_signed<Value>::value
-                   ? (value != 0 && value != Value(-1)) || (value >= 0 && (outputByte & 0x40)) ||
-                     (value < 0 && !(outputByte & 0x40))
-                   : (value != 0);
-            if (more) { outputByte |= 0x80; }
-            ss << outputByte;
-        };
-
+        ss << std::hex << inValue;
         return ss.str();
     }
 
-    std::string encode_name(std::string name) {
-        return to_little_endian_hex((unsigned long long) string_to_name(name));
-    }
 
     std::string encode_authorization(std::unordered_map<std::string, std::string> authorization) {
         std::string actor = encode_name(authorization["actor"]);
@@ -130,16 +149,16 @@ public:
     std::string encode_action(json action) {
         std::string acct = encode_name(action["account"]);
         std::string name = encode_name(action["name"]);
-        std::string auth = encode_authorization(action["authorization"][0]);
+        std::string auth = "01" + encode_authorization(action["authorization"][0]);
         std::string data = action["data"];
-        std::string data_len = serializeVarInt(data.size() / 2);
+        std::string data_len = serializeVarInt(data.length() / 2);
         return acct + name + auth + data_len + data;
     }
 
     std::string encode() {
         std::string hdr_buf = encode_hdr();
         std::string context_actions = "00";
-        std::string action = encode_action(data["actions"][0]);
+        std::string action = "01" + encode_action(_data["actions"][0]);
         std::string trans_exts = "00";
         return hdr_buf + context_actions + action + trans_exts;
     }
@@ -182,12 +201,21 @@ public:
 
 
     sha256 sig_digest(std::string payload, std::string chain_id) {
-        std::string full_payload = payload + chain_id;
-        char char_array[full_payload.length() + 32 + 1];
-//        for (int i = 0; i < sizeof(char_array)/ sizeof(const char*); i++) {
-//            char_array[i] = '\0';
-//        }
-        return sha256::hash(full_payload.c_str(), full_payload.length());
+        std::string full_payload = chain_id + payload;
+        std::string context_free_data = "";
+        for (int i = 0; i < 32; i++) {
+            context_free_data += "00";
+        }
+
+        full_payload += context_free_data;
+
+
+        std::cout << full_payload << std::endl;
+
+
+        unsigned char * bin_payload = hexstr_to_char(full_payload.c_str());
+
+        return sha256::hash((char *)bin_payload, full_payload.length() / 2);
     }
 
 
@@ -291,7 +319,6 @@ public:
 
     static std::string sig_to_str(compact_signature *sig) {
         unsigned int check = calculate_checksum(sig);
-        std::cout << sizeof(check) << std::endl;
         unsigned char data[COMPACT_SIG_LEN + sizeof(check)];
         memcpy(data, (const char *) &sig[0], COMPACT_SIG_LEN);
         memcpy(reinterpret_cast<unsigned char *>(reinterpret_cast<unsigned long long>(&data) + COMPACT_SIG_LEN),
@@ -310,23 +337,26 @@ public:
         Transaction trx = Transaction(transaction, chain_info, lib_info);
         std::string encoded_trx = trx.encode();
         sha256 digest = sig_digest(encoded_trx, chain_info["chain_id"]);
+
+        std::cout << digest.str() << std::endl;
+
         std::string priv_key = "5KQwrPbwdL6PhXujxW37FSSQZ1JiwsST4cqQzDeyXtP79zkvFD3";
         EC_KEY *ec_key = from_wif(priv_key);
-        char *private_key = BN_bn2hex(EC_KEY_get0_private_key(ec_key));
-
 
 //        ECDSA_SIG *signature = sign_dig(digest_arr, ec_key);
         compact_signature sig[COMPACT_SIG_LEN];
 
         sign_dig(digest, ec_key, sig);
 
-
         std::string sig_str = sig_to_str(sig);
-        time_t expiration = transaction["expiration"].get<time_t>();
-        transaction["expiration"] = to_iso_format(expiration);
+
+        // TODO fix shitcode
+        json tx_json = trx.get_tx_json();
+        time_t expiration = tx_json["expiration"].get<time_t>();
+        tx_json["expiration"] = to_iso_format(expiration);
 
         json final_trx = {{"compression", "none"},
-                          {"transaction", transaction},
+                          {"transaction", tx_json},
                           {"signatures",  {sig_str}}};
 
         return final_trx;
@@ -390,6 +420,12 @@ int sign(std::string token_account, std::string from_account, std::string to_acc
 
 int main() {
 
+
+//    std::cout << encode_name("active") << std::endl;
+
+
+//    return 0;
+
 //    char b[32];
 //    memset(b, 0, sizeof(b));
 //    auto sb = sha256(b, sizeof(b));
@@ -401,7 +437,6 @@ int main() {
 //    for (int i = 0; i < 65; i++) {
 //        ss << std::hex << (int) sig[i];
 //    }
-//
 //    std::cout << ss.str() << std::endl;
 //
 //    std::cout << Eos::sig_to_str(sig) << std::endl;
