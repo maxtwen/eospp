@@ -44,13 +44,12 @@ std::string to_iso_format(time_t &time) {
     return std::string(buf);
 }
 
-unsigned char* hexstr_to_char(const char* hexstr)
-{
+unsigned char *hexstr_to_char(const char *hexstr) {
     size_t len = strlen(hexstr);
     size_t final_len = len / 2;
-    unsigned char* chrs = (unsigned char*)malloc((final_len+1) * sizeof(*chrs));
-    for (size_t i=0, j=0; j<final_len; i+=2, j++)
-        chrs[j] = (hexstr[i] % 32 + 9) % 25 * 16 + (hexstr[i+1] % 32 + 9) % 25;
+    unsigned char *chrs = (unsigned char *) malloc((final_len + 1) * sizeof(*chrs));
+    for (size_t i = 0, j = 0; j < final_len; i += 2, j++)
+        chrs[j] = (hexstr[i] % 32 + 9) % 25 * 16 + (hexstr[i + 1] % 32 + 9) % 25;
     chrs[final_len] = '\0';
     return chrs;
 }
@@ -209,45 +208,85 @@ public:
 
         full_payload += context_free_data;
 
-
         std::cout << full_payload << std::endl;
 
 
-        unsigned char * bin_payload = hexstr_to_char(full_payload.c_str());
+        unsigned char *bin_payload = hexstr_to_char(full_payload.c_str());
 
-        return sha256::hash((char *)bin_payload, full_payload.length() / 2);
+        return sha256::hash((char *) bin_payload, full_payload.length() / 2);
     }
 
+    static std::vector<char> from_base58(const std::string &base58_str) {
+        std::vector<unsigned char> out;
+        if (!DecodeBase58(base58_str.c_str(), out)) {
+            throw "Unable to decode base58 string ${base58_str}";
+        }
+        return std::vector<char>((const char *) out.data(), ((const char *) out.data()) + out.size());
+    }
 
-    static EC_KEY *from_wif(std::string priv) {
+    int static inline EC_KEY_regenerate_key(EC_KEY *eckey, const BIGNUM *priv_key) {
+        int ok = 0;
+        BN_CTX *ctx = NULL;
+        EC_POINT *pub_key = NULL;
 
-        BIGNUM *priv_key = BN_new();
-        DecodeBase58(priv.c_str(), priv_key);
+        if (!eckey) return 0;
 
-        EC_GROUP *group = EC_GROUP_new_by_curve_name(NID_secp256k1);
-        EC_KEY *key = EC_KEY_new();
-        EC_KEY_set_conv_form(key, POINT_CONVERSION_COMPRESSED);
-        EC_POINT *pub_key = EC_POINT_new(group);
+        const EC_GROUP *group = EC_KEY_get0_group(eckey);
 
-        EC_KEY_set_group(key, group);
-        EC_KEY_set_private_key(key, priv_key);
-        EC_POINT_mul(group, pub_key, priv_key, NULL, NULL, NULL);
-        EC_KEY_set_public_key(key, pub_key);
+        if ((ctx = BN_CTX_new()) == NULL)
+            goto err;
 
+        pub_key = EC_POINT_new(group);
 
+        if (pub_key == NULL)
+            goto err;
+
+        if (!EC_POINT_mul(group, pub_key, priv_key, NULL, NULL, ctx))
+            goto err;
+
+        EC_KEY_set_private_key(eckey, priv_key);
+        EC_KEY_set_public_key(eckey, pub_key);
+
+        ok = 1;
+
+        err:
+
+        if (pub_key) EC_POINT_free(pub_key);
+        if (ctx != NULL) BN_CTX_free(ctx);
+
+        return (ok);
+    }
+
+    static EC_KEY *from_wif(const std::string &priv) {
+
+        auto wif_bytes = from_base58(priv);
+        auto key_bytes = std::vector<char>(wif_bytes.begin() + 1, wif_bytes.end() - 4);
+        auto key_hex = to_hex(key_bytes.data(), key_bytes.size());
+
+        sha256 tmp;
+        memcpy(&tmp, key_bytes.data(), std::min<size_t>(key_bytes.size(), sizeof(tmp)));
+        BIGNUM *bn = BN_new();
+        BN_bin2bn((const unsigned char *) &tmp, 32, bn);
+
+        std::cout << BN_bn2hex(bn) << std::endl;
+        EC_KEY *key = EC_KEY_new_by_curve_name(NID_secp256k1);
+        if (!EC_KEY_regenerate_key(key, bn)) {
+            throw "unable to regenerate key";
+        };
         return key;
     }
 
 
-    EC_KEY *get_public_key(EC_KEY *private_key) {
+    static EC_KEY *get_public_key(EC_KEY *private_key) {
         EC_KEY *pub = EC_KEY_new_by_curve_name(NID_secp256k1);
         EC_KEY_set_public_key(pub, EC_KEY_get0_public_key(private_key));
+        EC_KEY_set_conv_form(pub, POINT_CONVERSION_COMPRESSED);
         return pub;
     }
 
     static void public_to_buf(EC_KEY *key, char *buf) {
-        auto *buffer = (unsigned char *) (&buf[0]);
-        i2o_ECPublicKey(key, &buffer);
+        char *from = &buf[0];
+        i2o_ECPublicKey(key, (unsigned char **) (&from));
     }
 
 
@@ -257,7 +296,9 @@ public:
         ECDSA_SIG *ecdsa_sig = nullptr;
 
         char public_key[33];
-        public_to_buf(ec_key, public_key);
+        public_to_buf(get_public_key(ec_key), public_key);
+
+        std::cout << to_hex((const char *) &public_key, sizeof(public_key)) << std::endl;
 
         char key_data[33];
 
@@ -299,6 +340,9 @@ public:
             memcpy(&sig[1], &result[4], lenR);
             memcpy(&sig[33], &result[6 + lenR], lenS);
             sig[0] = nRecId + 27 + 4;
+
+            std::cout << ECDSA_do_verify((unsigned char *) digest.data(), sizeof(digest), ecdsa_sig, ec_key)
+                      << std::endl;
             return;
         }
 
@@ -338,8 +382,6 @@ public:
         std::string encoded_trx = trx.encode();
         sha256 digest = sig_digest(encoded_trx, chain_info["chain_id"]);
 
-        std::cout << digest.str() << std::endl;
-
         std::string priv_key = "5KQwrPbwdL6PhXujxW37FSSQZ1JiwsST4cqQzDeyXtP79zkvFD3";
         EC_KEY *ec_key = from_wif(priv_key);
 
@@ -352,7 +394,7 @@ public:
 
         // TODO fix shitcode
         json tx_json = trx.get_tx_json();
-        time_t expiration = tx_json["expiration"].get<time_t>();
+        auto expiration = tx_json["expiration"].get<time_t>();
         tx_json["expiration"] = to_iso_format(expiration);
 
         json final_trx = {{"compression", "none"},
@@ -418,8 +460,21 @@ int sign(std::string token_account, std::string from_account, std::string to_acc
     return 0;
 }
 
-int main() {
 
+int main() {
+//    char b[32];
+//    memset(b, 0, sizeof(b));
+//    auto sb = sha256::hash(b, sizeof(b));
+
+//    std::string payload = "1f47065124d50319cd457a8440b1004b18ca5b51934bc64b344310bc836b3a0d052ebd94f1df4c23ec482146a7088ec7a502d575aa168e552b749e3197b0c3ca49";
+//    unsigned char * bin_payload = hexstr_to_char(payload.c_str());
+//    std::cout << to_hex((const char*)&sb, sizeof(sb)) << std::endl;
+
+//    char b[32];
+//    memset(b, 0, sizeof(b));
+//    auto sb = sha256::hash(b, sizeof(b));
+//    std::cout << sb.str() << std::endl;
+//    return 0;
 
 //    std::cout << encode_name("active") << std::endl;
 

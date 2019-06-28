@@ -369,8 +369,10 @@ public:
 
 inline bool operator>(const CBigNum &a, const CBigNum &b) { return (BN_cmp(a.to_bignum(), b.to_bignum()) > 0); }
 
-BIGNUM *DecodeBase58(const char *psz, BIGNUM *result) {
+inline bool DecodeBase58(const char* psz, std::vector<unsigned char>& vchRet)
+{
     CAutoBN_CTX pctx;
+    vchRet.clear();
     CBigNum bn58 = 58;
     CBigNum bn = 0;
     CBigNum bnChar;
@@ -378,14 +380,16 @@ BIGNUM *DecodeBase58(const char *psz, BIGNUM *result) {
         psz++;
 
     // Convert big endian string to bignum
-    for (const char *p = psz; *p; p++) {
-        const char *p1 = strchr(pszBase58, *p);
-        if (p1 == NULL) {
+    for (const char* p = psz; *p; p++)
+    {
+        const char* p1 = strchr(pszBase58, *p);
+        if (p1 == NULL)
+        {
             while (isspace(*p))
                 p++;
             if (*p != '\0') {
                 //slog( "%s  '%c'", pszBase58,*p );
-                throw "base58 decoder error";
+                return false;
             }
             break;
         }
@@ -394,10 +398,24 @@ BIGNUM *DecodeBase58(const char *psz, BIGNUM *result) {
             throw bignum_error("DecodeBase58 : BN_mul failed");
         bn += bnChar;
     }
-    BIGNUM *decoded_key = bn.to_bignum();
-    BN_copy(result, decoded_key);
-}
 
+    // Get bignum as little endian data
+    std::vector<unsigned char> vchTmp = bn.getvch();
+
+    // Trim off sign byte if present
+    if (vchTmp.size() >= 2 && vchTmp.end()[-1] == 0 && vchTmp.end()[-2] >= 0x80)
+        vchTmp.erase(vchTmp.end()-1);
+
+    // Restore leading zeros
+    int nLeadingZeros = 0;
+    for (const char* p = psz; *p == pszBase58[0]; p++)
+        nLeadingZeros++;
+    vchRet.assign(nLeadingZeros + vchTmp.size(), 0);
+
+    // Convert little endian data to big endian
+    reverse_copy(vchTmp.begin(), vchTmp.end(), vchRet.end() - vchTmp.size());
+    return true;
+}
 // Encode a byte sequence as a base58-encoded string
 inline std::string EncodeBase58(const unsigned char *pbegin, const unsigned char *pend) {
     CAutoBN_CTX pctx;
