@@ -2,6 +2,9 @@
 #include <openssl/ecdsa.h>
 #include <openssl/obj_mac.h>
 #include <openssl/bn.h>
+#include "sha256.h"
+#include "types.h"
+#include "public_key.h"
 
 void ECDSA_SIG_get0(const ECDSA_SIG *sig, const BIGNUM **pr, const BIGNUM **ps) {
     if (pr != NULL)
@@ -142,4 +145,64 @@ ECDSA_SIG_recover_key_GFp(EC_KEY *eckey, ECDSA_SIG *ecsig, const unsigned char *
     if (O != NULL) EC_POINT_free(O);
     if (Q != NULL) EC_POINT_free(Q);
     return ret;
+}
+
+
+static void sign_dig(sha256 &digest,
+                     EC_KEY *ec_key,
+                     compact_signature *sig) { // see eos/libraries/fc/src/crypto/elliptic_openssl.cpp compact_signature private_key::sign_compact
+    ECDSA_SIG *ecdsa_sig = nullptr;
+
+    char public_key[33];
+    public_to_buf(get_public_key(ec_key), public_key);
+
+    std::cout << to_hex((const char *) &public_key, sizeof(public_key)) << std::endl;
+
+    char key_data[33];
+
+    while (true) {
+        ecdsa_sig = ECDSA_do_sign((unsigned char *) &digest, sizeof(digest),
+                                  ec_key); //TODO size of используется не правильно, там нужна длина
+
+        int nBitsR = BN_num_bits(ecdsa_sig->r);
+        int nBitsS = BN_num_bits(ecdsa_sig->s);
+        if (nBitsR > 256 || nBitsS > 256) continue;
+        int nRecId = -1;
+        EC_KEY *key = EC_KEY_new_by_curve_name(NID_secp256k1);
+        EC_KEY_set_conv_form(key, POINT_CONVERSION_COMPRESSED);
+        for (int i = 0; i < 4; i++) {
+            if (ECDSA_SIG_recover_key_GFp(key, ecdsa_sig, (unsigned char *) &digest,
+                                          sizeof(digest), i, 1) == 1) {
+                public_to_buf(key, key_data);
+                if (0 == memcmp(key_data, public_key, 33 * sizeof(char))) {
+                    nRecId = i;
+                    break;
+                }
+            }
+        }
+        EC_KEY_free(key);
+        unsigned char *result = nullptr;
+        auto bytes = i2d_ECDSA_SIG(ecdsa_sig, &result);
+        auto lenR = result[3];
+        auto lenS = result[5 + lenR];
+
+        if (lenR != 32) {
+            free(result);
+            continue;
+        }
+        if (lenS != 32) {
+            free(result);
+            continue;
+        }
+
+        memcpy(&sig[1], &result[4], lenR);
+        memcpy(&sig[33], &result[6 + lenR], lenS);
+        sig[0] = nRecId + 27 + 4;
+
+        std::cout << ECDSA_do_verify((unsigned char *) digest.data(), sizeof(digest), ecdsa_sig, ec_key)
+                  << std::endl;
+        return;
+    }
+
+
 }
