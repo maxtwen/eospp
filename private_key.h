@@ -54,7 +54,6 @@ static EC_KEY *from_wif(const std::string &priv) {
     BIGNUM *bn = BN_new();
     BN_bin2bn((const unsigned char *) &tmp, 32, bn);
 
-    std::cout << BN_bn2hex(bn) << std::endl;
     EC_KEY* key = EC_KEY_new_by_curve_name( NID_secp256k1 );
     if (!EC_KEY_regenerate_key(key, bn)) {
         throw "unable to regenerate key";

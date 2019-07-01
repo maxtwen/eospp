@@ -1,5 +1,6 @@
 #ifndef EOSPP_EOSPP_H
 #define EOSPP_EOSPP_H
+
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -26,7 +27,6 @@ const std::string SIG_PREFIX = "K1";
 const int COMPACT_SIG_LEN = 65;
 
 
-
 using json = nlohmann::json;
 
 template<class T>
@@ -41,7 +41,7 @@ std::string to_little_endian_hex(T t) {
 }
 
 
-std::string to_iso_format(time_t &time) {
+std::string to_iso_format(time_t &time) { // TODO переделать генерацию времени
     char buf[sizeof "2011-10-08T07:07:09"];
     strftime(buf, sizeof buf, "%FT%T", gmtime(&time));
     return std::string(buf);
@@ -99,7 +99,6 @@ std::string encode_name(std::string name) {
 
 class Transaction {
     json _data;
-    json _chain_info;
 
 public:
 
@@ -111,7 +110,6 @@ public:
         data["delay_sec"] = 0;
         data["context_free_actions"] = "[]"_json;
         _data = data;
-        _chain_info = chain_info;
     }
 
     int get_ref_blocknum(int head_blocknum) const {
@@ -211,9 +209,6 @@ public:
 
         full_payload += context_free_data;
 
-        std::cout << full_payload << std::endl;
-
-
         unsigned char *bin_payload = hexstr_to_char(full_payload.c_str());
 
         return sha256::hash((char *) bin_payload, full_payload.length() / 2);
@@ -253,7 +248,6 @@ public:
         sha256 digest = sig_digest(encoded_trx, chain_info["chain_id"]);
 
         EC_KEY *ec_key = from_wif(priv_key);
-//        ECDSA_SIG *signature = sign_dig(digest_arr, ec_key);
         compact_signature sig[COMPACT_SIG_LEN];
 
         sign_dig(digest, ec_key, sig);

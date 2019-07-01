@@ -156,8 +156,6 @@ static void sign_dig(sha256 &digest,
     char public_key[33];
     public_to_buf(get_public_key(ec_key), public_key);
 
-    std::cout << to_hex((const char *) &public_key, sizeof(public_key)) << std::endl;
-
     char key_data[33];
 
     while (true) {
@@ -199,8 +197,6 @@ static void sign_dig(sha256 &digest,
         memcpy(&sig[33], &result[6 + lenR], lenS);
         sig[0] = nRecId + 27 + 4;
 
-        std::cout << ECDSA_do_verify((unsigned char *) digest.data(), sizeof(digest), ecdsa_sig, ec_key)
-                  << std::endl;
         return;
     }
 
