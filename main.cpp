@@ -10,7 +10,7 @@ int sign(std::string &token_account, std::string &from_account, std::string &to_
                  {"to",       to_account},
                  {"quantity", quantity},
                  {"memo",     memo}};
-    json resp = eos.push_action(token_account, "transfer", from_account, "active", private_key, args, 60);
+    json resp = eos.sign_action(token_account, "transfer", from_account, "active", private_key, args, 60);
 
 
     std::cout << resp << std::endl;

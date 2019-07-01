@@ -180,7 +180,7 @@ public:
 
 
     json
-    push_action(std::string account, std::string action, std::string actor, std::string permission, std::string key,
+    sign_action(std::string account, std::string action, std::string actor, std::string permission, std::string key,
                 json args, int expiration_sec) {
         json binargs_resp = abi_json_to_bin(account, action, args);
         std::unordered_map<std::string, std::string> authorization[1] = {{{"actor", actor}, {"permission", permission}}};
@@ -196,7 +196,7 @@ public:
         json trx = {{"actions",    actions},
                     {"expiration", expiration}};
 
-        return push_transaction(trx, key);
+        return sign_transaction(trx, key);
     }
 
 
@@ -240,7 +240,7 @@ public:
     }
 
 
-    json push_transaction(json &transaction, std::string &priv_key) {
+    json sign_transaction(json &transaction, std::string &priv_key) {
         json chain_info = get_chain_info();
         json lib_info = get_block(chain_info["last_irreversible_block_num"]);
         Transaction trx = Transaction(transaction, chain_info, lib_info);
