@@ -1,7 +1,3 @@
-//
-// Created by mafanasevsky on 2019-07-01.
-//
-
 #ifndef EOSPP_UTILS_H
 #define EOSPP_UTILS_H
 
@@ -14,14 +10,21 @@ std::string to_hex(const char *d, uint32_t s) {
     return r;
 }
 
+std::string to_hex(unsigned long long value) {
+    std::stringstream ss;
+    ss << std::hex << value;
+    return ss.str();
+}
+
+
 
 template<class T>
 std::string to_little_endian_hex(T t) {
 // convert to long little endian hex
-    long lNum = (long) boost::endian::endian_reverse(t);
+    long l_num = (long) boost::endian::endian_reverse(t);
 // convert to string
     std::ostringstream oss;
-    oss << std::hex << lNum;
+    oss << std::hex << l_num;
     std::string mystring = oss.str();
     return mystring;
 }
@@ -44,7 +47,7 @@ unsigned char *hexstr_to_char(const char *hexstr) {
 }
 
 
-static constexpr uint64_t char_to_symbol(char c) {
+uint64_t char_to_symbol(char c) {
     if (c >= 'a' && c <= 'z')
         return (c - 'a') + 6;
     if (c >= '1' && c <= '5')
@@ -72,7 +75,7 @@ static uint64_t string_to_name(std::string str) {
 }
 
 std::string encode_name(std::string name) {
-    auto encoded_name = to_little_endian_hex((unsigned long long) string_to_name(name));
+    auto encoded_name = to_little_endian_hex((unsigned long long) string_to_name(std::move(name)));
     std::string result = "";
     if (encoded_name.length() < 16) {
         for (int i = 0; i < 16 - encoded_name.length(); i += 2) {
@@ -83,4 +86,4 @@ std::string encode_name(std::string name) {
     return result;
 }
 
-#endif //EOSPP_UTILS_H
+#endif

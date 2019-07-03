@@ -69,14 +69,6 @@ public:
     }
 
 
-    template<typename Value>
-    std::string serializeVarInt(Value inValue) {
-        std::stringstream ss;
-        ss << std::hex << inValue;
-        return ss.str();
-    }
-
-
     std::string encode_authorization(std::unordered_map<std::string, std::string> authorization) {
         std::string actor = encode_name(authorization["actor"]);
         std::string permission = encode_name(authorization["permission"]);
@@ -88,7 +80,7 @@ public:
         std::string name = encode_name(action["name"]);
         std::string auth = "01" + encode_authorization(action["authorization"][0]);
         std::string data = action["data"];
-        std::string data_len = serializeVarInt(data.length() / 2);
+        std::string data_len = to_hex(data.length() / 2);
         return acct + name + auth + data_len + data;
     }
 
