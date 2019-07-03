@@ -5,7 +5,7 @@ int sign(std::string &token_account, std::string &from_account, std::string &to_
          std::string &memo, std::string &private_key) {
 
 
-    Eos eos = Eos("http://localhost:8888", "v1");
+    Eos eos = Eos("https://nodeos-stage-2.detokex.com:443", "v1");
     json args = {{"from",     from_account},
                  {"to",       to_account},
                  {"quantity", quantity},

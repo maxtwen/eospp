@@ -6,7 +6,7 @@
 #include <string>
 #include <curlpp/cURLpp.hpp>
 #include <curlpp/Options.hpp>
-#include <nlohmann/json.hpp>
+#include "json.hpp"
 #include <curlpp/Easy.hpp>
 #include <array>
 #include <time.h>
