@@ -58,6 +58,7 @@ static EC_KEY *from_wif(const std::string &priv) {
     if (!EC_KEY_regenerate_key(key, bn)) {
         throw "unable to regenerate key";
     };
+    BN_clear_free(bn);
     return key;
 }
 

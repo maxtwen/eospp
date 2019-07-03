@@ -28,7 +28,6 @@
 using json = nlohmann::json;
 
 
-
 const std::string SIG_PREFIX = "K1";
 const int COMPACT_SIG_LEN = 65;
 
@@ -106,9 +105,9 @@ public:
 class Eos {
 
 public:
-    Eos(std::string nodeeos_url, std::string v) : nodeeos_url(nodeeos_url), v(v) { ; }
+    explicit Eos(std::string &&nodeeos_url) : nodeeos_url(nodeeos_url) { ; }
 
-    json abi_json_to_bin(std::string code, std::string action, json args) {
+    json abi_json_to_bin(std::string &code, std::string &action, json &args) {
         json params = {{"code",   code},
                        {"action", action},
                        {"args",   args}};
@@ -118,8 +117,8 @@ public:
 
 
     json
-    sign_action(std::string account, std::string action, std::string actor, std::string permission, std::string key,
-                json args, int expiration_sec) {
+    sign_action(std::string &account, std::string &action, std::string &actor, std::string &permission, std::string &key,
+                json &args, int &expiration_sec) {
         json binargs_resp = abi_json_to_bin(account, action, args);
         std::unordered_map<std::string, std::string> authorization[1] = {{{"actor", actor}, {"permission", permission}}};
         json action_json = {{"account",       account},
@@ -190,6 +189,8 @@ public:
 
         sign_dig(digest, ec_key, sig);
 
+        EC_KEY_free(ec_key);
+
         std::string sig_str = sig_to_str(sig);
 
         json final_trx = {{"compression", "none"},
@@ -213,7 +214,6 @@ public:
 
 private:
     std::string nodeeos_url;
-    std::string v;
 
     std::string make_request(std::string method, std::string params) {
         curlpp::Cleanup myCleanup;
@@ -223,7 +223,7 @@ private:
         std::stringstream response;
 
         request.setOpt(new curlpp::options::Url(
-                nodeeos_url + "/" + v + "/" + method)); // https://nodeos-stage-2.detokex.com/v1/chain/get_block
+                nodeeos_url + "/v1/" + method)); // https://nodeos-stage-2.detokex.com/v1/chain/get_block
         std::list<std::string> header;
         header.emplace_back("Content-Type: application/json");
         header.emplace_back("Accept: application/json");

@@ -5,12 +5,15 @@ int sign(std::string &token_account, std::string &from_account, std::string &to_
          std::string &memo, std::string &private_key) {
 
 
-    Eos eos = Eos("https://nodeos-stage-2.detokex.com:443", "v1");
+    Eos eos = Eos("https://nodeos-stage-2.detokex.com:443");
     json args = {{"from",     from_account},
                  {"to",       to_account},
                  {"quantity", quantity},
                  {"memo",     memo}};
-    json resp = eos.sign_action(token_account, "transfer", from_account, "active", private_key, args, 60);
+    std::string action = "transfer";
+    std::string permission = "active";
+    int expiration_sec = 60;
+    json resp = eos.sign_action(token_account, action, from_account, permission, private_key, args, expiration_sec);
 
 
     std::cout << resp << std::endl;
