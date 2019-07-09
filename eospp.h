@@ -129,7 +129,7 @@ public:
     }
 
 
-    sha256 sig_digest(std::string payload, std::string chain_id) {
+    sha256 get_signature_digest(std::string payload, std::string chain_id) {
         std::string full_payload = chain_id + payload;
         std::string context_free_data = "";
         for (int i = 0; i < 32; i++) {
@@ -174,7 +174,8 @@ public:
         json lib_info = get_block(chain_info["last_irreversible_block_num"]);
         Transaction trx = Transaction(transaction, chain_info, lib_info);
         std::string encoded_trx = trx.encode();
-        sha256 digest = sig_digest(encoded_trx, chain_info["chain_id"]);
+        sha256 digest = get_signature_digest(encoded_trx, chain_info["chain_id"]);
+
 
         EC_KEY *ec_key = from_wif(priv_key);
         compact_signature sig[COMPACT_SIG_LEN];

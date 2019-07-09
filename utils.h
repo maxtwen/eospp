@@ -23,8 +23,8 @@ std::string to_little_endian_hex(T t) {
 // convert to long little endian hex
     long l_num = (long) boost::endian::endian_reverse(t);
 // convert to string
-    std::ostringstream oss;
-    oss << std::hex << l_num;
+    std::stringstream oss;
+    oss << std::hex << std::setw(sizeof(T) * 2) << std::setfill('0') << l_num;
     std::string mystring = oss.str();
     return mystring;
 }

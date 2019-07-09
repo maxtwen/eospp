@@ -160,7 +160,7 @@ static void sign_dig(sha256 &digest,
 
     while (true) {
         ecdsa_sig = ECDSA_do_sign((unsigned char *) &digest, sizeof(digest),
-                                  ec_key); //TODO size of используется не правильно, там нужна длина
+                                  ec_key);
 
         int nBitsR = BN_num_bits(ecdsa_sig->r);
         int nBitsS = BN_num_bits(ecdsa_sig->s);
