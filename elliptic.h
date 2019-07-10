@@ -148,9 +148,9 @@ ECDSA_SIG_recover_key_GFp(EC_KEY *eckey, ECDSA_SIG *ecsig, const unsigned char *
 }
 
 
-static void sign_dig(sha256 &digest,
-                     EC_KEY *ec_key,
-                     compact_signature *sig) { // see eos/libraries/fc/src/crypto/elliptic_openssl.cpp compact_signature private_key::sign_compact
+int sign_compact(sha256 &digest,
+                 EC_KEY *ec_key,
+                 compact_signature *sig) { // see eos/libraries/fc/src/crypto/elliptic_openssl.cpp compact_signature private_key::sign_compact
     ECDSA_SIG *ecdsa_sig = nullptr;
 
     char public_key[33];
@@ -178,7 +178,7 @@ static void sign_dig(sha256 &digest,
                 }
             }
         }
-        EC_KEY_free(key);
+
         unsigned char *result = nullptr;
         auto bytes = i2d_ECDSA_SIG(ecdsa_sig, &result);
         auto lenR = result[3];
@@ -197,7 +197,10 @@ static void sign_dig(sha256 &digest,
         memcpy(&sig[33], &result[6 + lenR], lenS);
         sig[0] = nRecId + 27 + 4;
 
-        return;
+        EC_KEY_free(key);
+        ECDSA_SIG_free(ecdsa_sig);
+
+        return 1;
     }
 
 

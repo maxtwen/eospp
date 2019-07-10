@@ -37,7 +37,7 @@ class Transaction {
 
 public:
 
-    Transaction(json data, json chain_info, json lib_info) {
+    Transaction(json data, json &chain_info, json &lib_info) {
         data["ref_block_num"] = get_ref_blocknum(chain_info["last_irreversible_block_num"]);
         data["ref_block_prefix"] = lib_info["ref_block_prefix"];
         data["net_usage_words"] = 0;
@@ -75,7 +75,7 @@ public:
         return actor + permission;
     }
 
-    std::string encode_action(json action) {
+    std::string encode_action(json &action) {
         std::string acct = encode_name(action["account"]);
         std::string name = encode_name(action["name"]);
         std::string auth = "01" + encode_authorization(action["authorization"][0]);
@@ -180,7 +180,7 @@ public:
         EC_KEY *ec_key = from_wif(priv_key);
         compact_signature sig[COMPACT_SIG_LEN];
 
-        sign_dig(digest, ec_key, sig);
+        sign_compact(digest, ec_key, sig);
 
         EC_KEY_free(ec_key);
 
